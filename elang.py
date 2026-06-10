@@ -35,12 +35,12 @@ def send_request(worker_id, url, timeout):
 
 def main():
     print("=====================================================")
-    print("       PYTHON 3 HTTP TESTER (DIRECT IP MODE)         ")
+    print("                  ELANG  HTTP TESTER                   ")
     print("=====================================================")
 
     # 1. Input Manual URL Target
     target_url = input(
-        "1. Masukkan URL Target (contoh: https://example.com): "
+        "1. Masukkan URL Target (https://example.com): "
     ).strip()
     if not target_url:
         print("[ERROR] URL tidak boleh kosong!")
@@ -49,7 +49,7 @@ def main():
     # 2. Input Manual Concurrency (Threads)
     try:
         concurrency = int(
-            input("2. Masukkan Jumlah Threads/Concurrency (contoh: 20): ").strip()
+            input("2. Masukkan Threads/Concurrency (contoh: 20): ").strip()
         )
         if concurrency <= 0:
             raise ValueError
