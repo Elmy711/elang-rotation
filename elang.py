@@ -1,13 +1,8 @@
 import random
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
-
-# --- KONFIGURASI PENGUJIAN ---
-TARGET_URL = "https://example.com"
-TOTAL_REQUESTS = 100
-CONCURRENCY = 10  # Jumlah Threads / Workers Pool
-TIMEOUT = 5  # Timeout per request dalam detik
 
 
 def load_proxies(filename="proxies.txt"):
@@ -18,19 +13,17 @@ def load_proxies(filename="proxies.txt"):
             for line in file:
                 line = line.strip()
                 if line:
-                    # Format standar http://IP:PORT
                     proxies.append({"http": f"http://{line}", "https": f"http://{line}"})
         print(f"[INFO] Berhasil memuat {len(proxies)} proxy.")
     except FileNotFoundError:
         print(f"[ERROR] File '{filename}' tidak ditemukan!")
         print("[INFO] Jalankan tanpa proxy (menggunakan IP lokal)...")
-        proxies = [None]  # Tetap jalan tanpa proxy jika file tidak ada
+        proxies = [None]
     return proxies
 
 
-def send_request(worker_id, url, proxy_list):
+def send_request(worker_id, url, proxy_list, timeout):
     """Fungsi utama worker untuk mengeksekusi request HTTP."""
-    # Ambil proxy secara acak dari daftar untuk rotasi IP
     selected_proxy = random.choice(proxy_list)
 
     headers = {
@@ -40,13 +33,10 @@ def send_request(worker_id, url, proxy_list):
 
     start_time = time.time()
     try:
-        # Eksekusi HTTP GET
         response = requests.get(
-            url, headers=headers, proxies=selected_proxy, timeout=TIMEOUT
+            url, headers=headers, proxies=selected_proxy, timeout=timeout
         )
         duration = time.time() - start_time
-
-        # Tampilkan status proxy yang digunakan di log debug
         proxy_str = (
             selected_proxy["http"] if selected_proxy else "IP Lokal / Tanpa Proxy"
         )
@@ -57,13 +47,11 @@ def send_request(worker_id, url, proxy_list):
             "proxy_used": proxy_str,
             "error": None,
         }
-
     except requests.RequestException as e:
         duration = time.time() - start_time
         proxy_str = (
             selected_proxy["http"] if selected_proxy else "IP Lokal / Tanpa Proxy"
         )
-        # Menangkap error timeout, koneksi diputus, atau proxy mati
         error_name = type(e).__name__
         return {
             "status_code": 0,
@@ -75,18 +63,59 @@ def send_request(worker_id, url, proxy_list):
 
 def main():
     print("=====================================================")
-    print("             HTTP TESTER PROXY ROTATION             ")
-    print("=====================================================")
-    print(f"Target URL   : {TARGET_URL}")
-    print(f"Concurrency  : {CONCURRENCY} Threads")
-    print(f"Total Req    : {TOTAL_REQUESTS}")
+    print("       ELANG HTTP TESTER WITH PROXY ROTATION      ")
     print("=====================================================")
 
-    # 1. Load Daftar Proxy
+    # 1. Input Manual URL Target
+    target_url = input(
+        "1. Masukkan URL Target (contoh: https://example.com): "
+    ).strip()
+    if not target_url:
+        print("[ERROR] URL tidak boleh kosong!")
+        sys.exit(1)
+
+    # 2. Input Manual Concurrency (Threads)
+    try:
+        concurrency = int(
+            input("2. Masukkan Jumlah Threads/Concurrency (contoh: 10): ").strip()
+        )
+        if concurrency <= 0:
+            raise ValueError
+    except ValueError:
+        print("[ERROR] Jumlah threads harus berupa angka bulat positif!")
+        sys.exit(1)
+
+    # 3. Input Manual Total Request
+    try:
+        total_requests = int(
+            input("3. Masukkan Total Requests (contoh: 100): ").strip()
+        )
+        if total_requests <= 0:
+            raise ValueError
+    except ValueError:
+        print("[ERROR] Total requests harus berupa angka bulat positif!")
+        sys.exit(1)
+
+    # 4. Input Manual Timeout (Opsional, Default 5 detik)
+    timeout_input = input(
+        "4. Masukkan Timeout per request dalam detik [Default: 5]: "
+    ).strip()
+    timeout = 5 if not timeout_input else int(timeout_input)
+
+    print("=====================================================")
+
+    # Load Daftar Proxy
     proxy_list = load_proxies("proxies.txt")
     if not proxy_list:
-        print("[WARNING] Daftar proxy kosong! Menggunakan IP lokal.")
         proxy_list = [None]
+
+    print("\n=================== KONFIGURASI =====================")
+    print(f"Target URL   : {target_url}")
+    print(f"Concurrency  : {concurrency} Threads")
+    print(f"Total Req    : {total_requests}")
+    print(f"Timeout      : {timeout} detik")
+    print("=====================================================")
+    print("Memulai pengujian... Tekan Ctrl+C untuk membatalkan.\n")
 
     success_count = 0
     fail_count = 0
@@ -95,15 +124,13 @@ def main():
 
     start_test_time = time.time()
 
-    # 2. Inisialisasi ThreadPoolExecutor (Workers Pool di Python)
-    with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
-        # Kirim seluruh tugas ke antrean executor
+    # Eksekusi dengan ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
         futures = [
-            executor.submit(send_request, i, TARGET_URL, proxy_list)
-            for i in range(TOTAL_REQUESTS)
+            executor.submit(send_request, i, target_url, proxy_list, timeout)
+            for i in range(total_requests)
         ]
 
-        # Ambil hasil dari setiap thread secara real-time saat selesai
         for future in as_completed(futures):
             res = future.result()
 
@@ -130,20 +157,20 @@ def main():
     print(f"Requests Sukses      : {success_count}")
     print(f"Requests Gagal       : {fail_count}")
     if total_time > 0:
-        print(f"Rata-rata Kecepatan  : {TOTAL_REQUESTS / total_time:.2f} req/sec")
+        print(f"Rata-rata Kecepatan  : {total_requests / total_time:.2f} req/sec")
 
-    if statusCodes := status_codes:
+    if status_codes:
         print("\nDetail Status Code   :")
-        for code, count in statusCodes.items():
+        for code, count in status_codes.items():
             print(f"  - Status {code} : {count} kali")
 
-    if errorLog := errors:
+    if errors:
         print("\nRincian Error (Proxy Mati / Timeout) :")
-        for err_msg, count in errorLog.items():
+        for err_msg, count in errors.items():
             print(f"  - [ {count} kali ] {err_msg}")
     print("=====================================================")
 
 
 if __name__ == "__main__":
     main()
-
+    
